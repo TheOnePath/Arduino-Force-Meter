@@ -1,0 +1,73 @@
+import csv
+import sys
+from scipy.interpolate import interp1d
+import numpy as np
+
+from PyQt5 import QtGui, QtCore, QtWidgets, uic
+from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar)
+from matplotlib.figure import Figure
+
+data_file = "data_0.csv"
+Ui_MainWindow, QMainWindow = uic.loadUiType('./lib/window.ui')
+
+
+class Window(QMainWindow, Ui_MainWindow):
+    def __init__(self, parent=None):
+        super(Window, self).__init__()
+        self.setupUi(self)
+        self.mplfigs.itemClicked.connect(self.change_graph)
+
+        # Plot the graph using softcoding
+        self.Plot = lambda f=data_file: self.plot(f)
+
+        # Lists for data records
+        self.time = []
+        self.newtons = []
+
+        # Graph setup
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self.figure)
+        self.mplvl.addWidget(self.canvas)
+        self.canvas.draw()
+
+        # Toolbar
+        self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
+        self.addToolBar(self.toolbar)
+
+
+    def plot(self, datafile):
+        with open(f"../results/{datafile}", newline='') as datafile:
+                reader = csv.DictReader(datafile)
+                for row in reader:
+                    self.time.append(row['time'])
+                    self.newtons.append(row['newtons'])
+
+        self.time.remove(''); self.newtons.remove('')
+        self.time = [float(x) for x in self.time]; self.newtons = [float(x) for x in self.newtons]
+
+        ##xmin = self.time[0]
+        ##xmax = self.time[len(self.time)-1]
+        ##interval = (xmax-xmin)/99
+        ##coefs = np.polyfit(self.time, self.newtons, len(self.time))
+
+        ##xfit = np.arange(xmin, xmax + interval, interval)
+        ##yfit = np.polyval(coefs, xfit)
+
+        ax = self.figure.add_subplot(111)
+        ax.plot(self.time, self.newtons)
+
+        #print(xfit, yfit)
+        peak_index = self.newtons.index(max(self.newtons))
+        ax.plot(self.time[peak_index], self.newtons[peak_index], '.')
+
+
+    def change_graph(self):
+        return
+
+
+if __name__ == '__main__':
+    app = QtWidgets.QApplication(sys.argv)
+    main = Window()
+    main.Plot()
+    main.show()
+    sys.exit(app.exec_())
