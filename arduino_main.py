@@ -1,14 +1,51 @@
-import serial
+"""This module provides a Real-Time data stream, read-only, from an Arduino that's connected via COMs port.
+NOTE: This module is in beta stages and redevelopment will be necessary for improved efficiency later on.
+
+    The baurate of the Arduino must be set at 9600 and if the COMs port stored does not match the Arduino then
+    this module will reconnect to the correct port and store the new COM port. If the connection to Arduino is
+    lost then the script will try and reconnect to the Arduino on the same port every 10 seconds. If this is
+    unsuccessful then a new port is searched for, becoming the new COMs port and stored, however if the Arduino
+    is found on the same port and baurate then the connection is re-established and the program starts over again.
+
+    Some important classes and methods of this module.
+        class Connect:
+            This is the main class of the whole application and should be the primary reference point when
+            calling the module externally. This class does not take any parameters and initialises some
+            important global variables as followed:
+                self.port           the main COMs port that is used to create a serial link to the Arduino.
+                self.bps            the baurate of the Arduino that's used in conjunction with self.port.
+                self.ports_list     a list of the currently available COMs ports
+                self.app            an object variable of the class Main. To access variables and methods
+                                    within Main, this variable should be referenced.
+                
+        function connect()    parameters | self:
+            This function is responsible for initialising the serial connection to the Arduino on the defined
+            ports in class Connect. If the connection is not established then the program will search for another
+            available port and reconnect on that port or re-establish the same connection - both occur after 10 seconds.
+
+            If the connection to the Arduino is lost whilst reading the serial data stream, then this function is too
+            responsible for reconnecting the serial data stream.
+            Some notable global variables within this function accessed through class Connect():
+                self.arduino            this is the main variable that holds a link to the arduino
+                                        and is reads the serial data stream forever. If the connection
+                                        to the Arduino is lost this variable loses its link and raises
+                                        the exception serial.SerialException() in function main()
+                self.connection_lost    responsible for determining when the connection to the Arduino
+                                        is lost and re-established during conditional verification.
+"""
+
 import re
-import threading
-import sys, os
 import csv
+import serial
+import sys, os
+import threading
 import configparser
 import tkinter as tk
 
+from tkinter import ttk
+from serial.tools import list_ports
 from lib.graph_plotter import PlotGraph
 from tkinter import messagebox, filedialog
-from serial.tools import list_ports
 
 
 config = configparser.ConfigParser()
@@ -17,10 +54,12 @@ config.read('setup.ini')
 recording = False
 records = []
 dump_val = int(config['SETUP']['count'])
-init_time = 0
-
 
 def restart():
+    """Restart the program.\n
+    NOTE: This function only works when application is executed from the CLI environment.\n
+    A tkinter messagebox will ask to confirm whether a restart is to occur."""
+
     if messagebox.askokcancel("Restart Program...", message="Restart works if the program is executed "\
                                                                     "from the command-line environment only. Any"\
                                                                     "any data genarated is not saved automatically.\n\n"\
@@ -36,6 +75,10 @@ def restart():
 
 
 def record(menu):
+    """Called from class Main() through 'Record' in Tools. Create a recording session where data is collected
+    and allow for 'Record' to be toggled between starting and stoping.\n
+    Data is automatically written to CSV on session end."""
+
     global recording, records, init_time
 
     if not recording:
@@ -54,6 +97,9 @@ def record(menu):
         
 
 def dump_data():
+    """Called after a recording session is completed.\n
+    Collected data is written to CSV file."""
+
     global dump_val
     
     if len(records) > 0:
@@ -82,6 +128,9 @@ def dump_data():
 
 
 def open_dump():
+    """Called from class Main() through 'Open' in File. 
+    Select record file to open in default spreadsheet application."""
+
     filename = filedialog.askopenfilename(initialdir="./", title="Open File...", filetypes=[("Text File","*.csv")])
     if not filename == '':
         os.popen(f'"{filename}"')
@@ -90,6 +139,8 @@ def open_dump():
 
 
 def plot_graph():
+    """Called from class Main() through 'Plot Graph' in Tools. Select record to generate a graph from."""
+    
     filename = filedialog.askopenfilename(initialdir="./", title="Open File...", filetypes=[("Text File","*.csv")])
     if not filename == '':
         graph = PlotGraph()
@@ -99,19 +150,30 @@ def plot_graph():
 
 
 class Connect():
+    """Initialise the serial connection to the selected Arduino.
+    This is the main class when calling externally."""
+
     def __init__(self):
+        '''Setup for the application'''
         super().__init__()
         print("Firing up initialisation...")
         
         self.port = config['SETUP']['port']
         self.bps = int(config['SETUP']['bps'])
 
+        self.connection_lost = False
+        self.ports_list = []
+        self.init_time = 0
+
         self.app = Main()
         self.connect()
 
+        get_ports = list_ports.comports()
+        for port in get_ports:
+            self.ports_list.append(list(port))
+
     def connect(self):
-        list_of_ports = list_ports.comports()
-        for _port in list_of_ports:
+        for _port in self.ports_list:
             self.port = list(_port)[0]
 
         try:
@@ -120,23 +182,77 @@ class Connect():
             print(f"\nArduino not found on {self.port}:{self.bps}!\nPlease change the port under Options when the application loads."\
                     "\nReconnecting in 10 seconds...")
             threading.Timer(10.0, self.connect).start()
+            self.connection_lost = True
         else:
             print(f"Arduino found on {self.port}:{self.bps}")
+            self.connection_lost = False
 
 
 class PortsMenu(tk.Tk):
+    """Allow selection of a different Arduino.\n
+        Not to be called externally and triggered through selecting 'Port' in Options.\n
+        (WIP)"""
+    
     def __init__(self, *args, **kwargs):
+        """Setup initialisation."""
+
         super().__init__()
+        ## NOTE:
+        # incremental factor equals 6. When width isn't passed, 
+        # the number of pixels equals 44px
+        # ...
+        # formaula - 'width = n' = (wm_width - px[width = 1]) / k, when k = 6
+        #            (key px[...] means no. of pixels of width = 1)
+        ## FUTHER NOTE:
+        # Since the value of n cannot be a decimal value, rounding to the nearest
+        # whole number will be an offset to the actually size.
+        ## EXAMPLE:
+        # button = ttk.Button(self, text="Hello World", width=round((int(wm_width)/2 - 16) / 6), command=self.callback)
+        ##
+
+        wm_width = '250'
+        wm_height = '50'
         
-        frame = tk.Frame()
+        tk.Tk.wm_title(self, "Ports Menu")
+        tk.Tk.wm_geometry(self, wm_width + "x" + wm_height)
+        tk.Tk.wm_resizable(self, False, False)
+
+        frame = ttk.Frame()
         frame.pack()
 
-        button = tk.Button(self, text=conn.port)
-        button.pack()
+        port_options = []
+        for item in conn.ports_list:
+            port_options.append(item[0])
+
+        self.selected_port = tk.StringVar(self)
+
+        title_lbl = ttk.Label(self, text="Avaliable Ports")
+        title_lbl.pack()
+
+        port_lbl = ttk.Label(self, text="Ports:")
+        port_lbl.pack(side="left", padx=20)
+
+        if conn.connection_lost:
+            option = ttk.OptionMenu(self, self.selected_port, conn.port, *port_options, command=self.OptionMenu_OnChange)
+            option.pack(side="left")
+        else:
+            no_ports = ttk.Label(self, text="No Port Available...")
+            no_ports.pack(side="left", padx=10)
+
+    
+    def OptionMenu_OnChange(self, event):
+        """Local callback - changes the serial port."""
+
+        conn.port = event
 
 
 class Main(tk.Tk):
+    """Main class to initialise the tkinter window called after Connect().\n
+    To reference class, use link reference self.app in Connect()"""
+
     def __init__(self, *args, **kwargs):
+        """Setup initialisation to create tkinter window"""
+
         tk.Tk.__init__(self, *args, **kwargs)
 
         # Create variable labels
@@ -157,7 +273,7 @@ class Main(tk.Tk):
         filemenu.add_command(label="Open", command=open_dump)
 
         optionmenu = tk.Menu(menubar, tearoff=0)
-        # Call function to load PortsMenu
+        # Call class to load PortsMenu
         optionmenu.add_command(label="Port", command=PortsMenu)
         optionmenu.add_separator()
         optionmenu.add_command(label="Restart", command=restart)
@@ -167,12 +283,6 @@ class Main(tk.Tk):
         toolmenu.add_command(label="Record", command=lambda: record(toolmenu))
         toolmenu.add_command(label="Plot Graph", command=plot_graph)
 
-
-        ### Create a port list to select whichever port is available
-        ### TODO: script to list through current ports
-        portlist = tk.Menu(optionmenu, tearoff=0)
-        portlist.add_radiobutton(label="Test", command=None)
-
         menubar.add_cascade(label="File", menu=filemenu)
         menubar.add_cascade(label="Options", menu=optionmenu)
         menubar.add_cascade(label="Tools", menu=toolmenu)
@@ -181,7 +291,7 @@ class Main(tk.Tk):
 
         # Title window
         tk.Tk.wm_title(self, "Arduino")
-        #tk.Tk.wm_geometry(self, "500x250")
+        tk.Tk.wm_resizable(False, False)
         # Populate window
         lbl1 = tk.Label(self, text="Force:")
         lbl2 = tk.Label(self, text="Newton:")
@@ -197,23 +307,26 @@ class Main(tk.Tk):
         self.force.set("0"); self.newton.set("0"); self.time.set("0")
 
         def popup(event):
+            """Local function. Called on user right-click"""
             menu_win.post(event.x_root, event.y_root)
 
         self.bind("<Button-3>", popup)
 
 
 def main():
-    global init_time
+    """Main function to be called after the tkinter window has loaded.\n
+    Real-Time data stream from Arduino and displayed to the tkinter window."""
 
     msglog = ''
     try:
         try:
             ard_msg = conn.arduino.readline().decode('utf-8')
-        except (AttributeError, serial.SerialException) as e:
-            if e:
-                pass
-            else:
-                pass
+        except (AttributeError, serial.SerialException):
+            if not conn.connection_lost:
+                print(f"\nConnection to Arduino was lost on {conn.port}:{conn.bps}!\nReconnecting to Arduino in 10 seconds...")
+                conn.connection_lost = True
+                conn.ports_list.clear()
+                threading.Timer(10.0, conn.connect).start()
     except UnicodeDecodeError:
         pass
     
@@ -221,9 +334,9 @@ def main():
         if ard_msg[:-4] != msglog: 
             msg = [str(s) for s in ard_msg.split() if not any(char.isalpha() for char in s)]
             if recording:
-                if init_time == 0:
-                    init_time = int(msg[2])
-                    print(init_time)
+                if conn.init_time == 0:
+                    conn.init_time = int(msg[2])
+                    print(conn.init_time)
                 else:
                     records.append([float(msg[0]), float(msg[1]), int(msg[2]) - init_time])
 
