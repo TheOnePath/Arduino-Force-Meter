@@ -1,2 +1,2 @@
 # Arduino Force Meter
- A Python program that reads the force, newtons and time from the I/O data stream of an Arduino Nano and displays the data to a TKinter GUI, dumps records to CSV files and PyQt with Matplotlib to show a graph representation of the recorded data.
+ A real-time, Python program that reads the calculated force, newtons and time from the I/O serial data stream of an Arduino with {force sensor} and displays the data to a TKinter GUI, writes recorded event sessions to CSV files and generates graphs using Matplotlib to represent the recorded data in a PyQt5 framework.
