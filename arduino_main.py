@@ -1,5 +1,6 @@
-"""This module provides a Real-Time data stream, read-only, from an Arduino that's connected via COMs port.
+"""This module provides a Real-Time serial data stream, read-only, from an Arduino that's connected via COMs port.
 NOTE: This module is in beta stages and redevelopment will be necessary for improved efficiency later on.
+CREDIT: Program created by Ethan Smith-Coss
 
     The baurate of the Arduino must be set at 9600 and if the COMs port stored does not match the Arduino then
     this module will reconnect to the correct port and store the new COM port. If the connection to Arduino is
@@ -18,7 +19,7 @@ NOTE: This module is in beta stages and redevelopment will be necessary for impr
                 self.app            an object variable of the class Main. To access variables and methods
                                     within Main, this variable should be referenced.
                 
-        function connect()    parameters | self:
+        function connect()      parameters | self       belongs to | Connect:
             This function is responsible for initialising the serial connection to the Arduino on the defined
             ports in class Connect. If the connection is not established then the program will search for another
             available port and reconnect on that port or re-establish the same connection - both occur after 10 seconds.
@@ -32,6 +33,17 @@ NOTE: This module is in beta stages and redevelopment will be necessary for impr
                                         the exception serial.SerialException() in function main()
                 self.connection_lost    responsible for determining when the connection to the Arduino
                                         is lost and re-established during conditional verification.
+        
+        class Main      parameter | tk.Tk:
+            This is the main class that creates the tkinter framework window for the real-time serial data stream.
+            Here, 3 variable labels are created, Force, Newtons and Time, each of which changes in-response to the
+            incoming data stream. Some important variables are as followed:
+                self.force      the variable label that changes depending on the level of force read from the incoming
+                                serial data stream.
+                self.newton     the variable label that changes depending on the calculated newton force read from the
+                                incoming serial data stream.
+                self.time       the variable label that changes according to the internal elapsed time of the Arduino
+                                read from the incoming serial data stream.
 """
 
 import re
@@ -153,9 +165,9 @@ class Connect():
     """Initialise the serial connection to the selected Arduino.
     This is the main class when calling externally."""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         '''Setup for the application'''
-        super().__init__()
+        super(Connect, self).__init__()
         print("Firing up initialisation...")
         
         self.port = config['SETUP']['port']
@@ -168,82 +180,22 @@ class Connect():
         self.app = Main()
         self.connect()
 
-        get_ports = list_ports.comports()
-        for port in get_ports:
-            self.ports_list.append(list(port))
-
     def connect(self):
-        for _port in self.ports_list:
-            self.port = list(_port)[0]
-
+        self.get_ports = list_ports.comports()
         try:
             self.arduino = serial.Serial(self.port, self.bps, timeout=.1)
         except serial.SerialException:
             print(f"\nArduino not found on {self.port}:{self.bps}!\nPlease change the port under Options when the application loads."\
                     "\nReconnecting in 10 seconds...")
-            threading.Timer(10.0, self.connect).start()
+            self.app.after(10**4, self.connect)
             self.connection_lost = True
         else:
             print(f"Arduino found on {self.port}:{self.bps}")
             self.connection_lost = False
 
-
-class PortsMenu(tk.Tk):
-    """Allow selection of a different Arduino.\n
-        Not to be called externally and triggered through selecting 'Port' in Options.\n
-        (WIP)"""
-    
-    def __init__(self, *args, **kwargs):
-        """Setup initialisation."""
-
-        super().__init__()
-        ## NOTE:
-        # incremental factor equals 6. When width isn't passed, 
-        # the number of pixels equals 44px
-        # ...
-        # formaula - 'width = n' = (wm_width - px[width = 1]) / k, when k = 6
-        #            (key px[...] means no. of pixels of width = 1)
-        ## FUTHER NOTE:
-        # Since the value of n cannot be a decimal value, rounding to the nearest
-        # whole number will be an offset to the actually size.
-        ## EXAMPLE:
-        # button = ttk.Button(self, text="Hello World", width=round((int(wm_width)/2 - 16) / 6), command=self.callback)
-        ##
-
-        wm_width = '250'
-        wm_height = '50'
-        
-        tk.Tk.wm_title(self, "Ports Menu")
-        tk.Tk.wm_geometry(self, wm_width + "x" + wm_height)
-        tk.Tk.wm_resizable(self, False, False)
-
-        frame = ttk.Frame()
-        frame.pack()
-
-        port_options = []
-        for item in conn.ports_list:
-            port_options.append(item[0])
-
-        self.selected_port = tk.StringVar(self)
-
-        title_lbl = ttk.Label(self, text="Avaliable Ports")
-        title_lbl.pack()
-
-        port_lbl = ttk.Label(self, text="Ports:")
-        port_lbl.pack(side="left", padx=20)
-
-        if conn.connection_lost:
-            option = ttk.OptionMenu(self, self.selected_port, conn.port, *port_options, command=self.OptionMenu_OnChange)
-            option.pack(side="left")
-        else:
-            no_ports = ttk.Label(self, text="No Port Available...")
-            no_ports.pack(side="left", padx=10)
-
-    
-    def OptionMenu_OnChange(self, event):
-        """Local callback - changes the serial port."""
-
-        conn.port = event
+        for com_port in self.get_ports:
+            if not list(com_port) in self.ports_list:
+                self.ports_list.append(list(com_port)[0])
 
 
 class Main(tk.Tk):
@@ -291,7 +243,7 @@ class Main(tk.Tk):
 
         # Title window
         tk.Tk.wm_title(self, "Arduino")
-        tk.Tk.wm_resizable(False, False)
+        tk.Tk.wm_resizable(self, False, False)
         # Populate window
         lbl1 = tk.Label(self, text="Force:")
         lbl2 = tk.Label(self, text="Newton:")
@@ -311,6 +263,83 @@ class Main(tk.Tk):
             menu_win.post(event.x_root, event.y_root)
 
         self.bind("<Button-3>", popup)
+
+
+class PortsMenu(tk.Tk):
+    """Allow selection of a different Arduino.\n
+        Not to be called externally and triggered through selecting 'Port' in Options.\n
+        (WIP)"""
+    
+    def __init__(self, *args, **kwargs):
+        """Setup initialisation."""
+
+        super().__init__()
+        ## NOTE:
+        # incremental factor equals 6. When width isn't passed, 
+        # the number of pixels equals 44px
+        # ...
+        # formaula - 'width = n' = (wm_width - px[width = 1]) / k, when k = 6
+        #            (key px[...] means no. of pixels of width = 1)
+        ## FUTHER NOTE:
+        # Since the value of n cannot be a decimal value, rounding to the nearest
+        # whole number will be an offset to the actually size.
+        ## EXAMPLE:
+        # button = ttk.Button(self, text="Hello World", width=round((int(wm_width)/2 - 16) / 6), command=self.callback)
+        ##
+
+        wm_width = '250'
+        wm_height = '50'
+        
+        tk.Tk.wm_title(self, "Ports Menu")
+        tk.Tk.wm_geometry(self, wm_width + "x" + wm_height)
+        tk.Tk.wm_resizable(self, False, False)
+
+        frame = ttk.Frame()
+        frame.pack()
+
+        self.port_options = []
+        self.update_ports_list()
+
+        self.selected_port = tk.StringVar(self)
+
+        title_lbl = ttk.Label(self, text="Avaliable Ports")
+        title_lbl.pack()
+
+        port_lbl = ttk.Label(self, text="Ports:")
+        port_lbl.pack(side="left", padx=20)
+
+
+        if (conn.connection_lost and len(self.port_options) == 1 and conn.port in self.port_options) or (not conn.connection_lost and len(self.port_options) == 1 and conn.port in self.port_options):
+            no_ports = ttk.Label(self, text=conn.port)
+            no_ports.pack(side="left", padx=10)
+        elif len(self.port_options) >= 1:
+            option = ttk.OptionMenu(self, self.selected_port, conn.port, *self.port_options, command=self.OptionMenu_OnChange)
+            option.pack(side="left")
+        else:
+            no_ports = ttk.Label(self, text="No Port Available...")
+            no_ports.pack(side="left", padx=10)
+
+
+    def update_ports_list(self):
+        self.get_ports = list_ports.comports()
+        if len(self.get_ports) == 0:
+            self.port_options.clear()
+            return
+
+        for com_port in self.get_ports:
+            if not list(com_port) in self.port_options:
+                self.port_options.append(list(com_port)[0])
+   
+
+    def OptionMenu_OnChange(self, event):
+        """Local callback - changes the serial port."""
+        self.update_ports_list()
+
+        conn.port = event
+        if not conn.connection_lost:
+            print(f"Reconnecting on {conn.port}:{conn.bps}...")
+            conn.connect()
+
 
 
 def main():
@@ -338,7 +367,7 @@ def main():
                     conn.init_time = int(msg[2])
                     print(conn.init_time)
                 else:
-                    records.append([float(msg[0]), float(msg[1]), int(msg[2]) - init_time])
+                    records.append([float(msg[0]), float(msg[1]), int(msg[2]) - conn.init_time])
 
             conn.app.force.set(msg[0]); conn.app.newton.set(msg[1]); conn.app.time.set(msg[2])
     except UnboundLocalError:
@@ -352,7 +381,7 @@ def main():
 
 if __name__ == "__main__":
     conn = Connect()
-    conn.app.after(256, main)
+    conn.app.after(200, main)
     conn.app.mainloop()
 
     print(f"Closing connection to {conn.port}:{conn.bps}...")
@@ -366,3 +395,4 @@ if __name__ == "__main__":
         config.write(ini_file)
 
 print("Terminating process...")
+quit()
