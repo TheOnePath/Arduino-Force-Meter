@@ -48,11 +48,16 @@ CREDIT: Program created by Ethan Smith-Coss
 
 import re
 import csv
-import serial
 import sys, os
 import threading
 import configparser
 import tkinter as tk
+
+try:
+    import serial
+except ModuleNotFoundError as e:
+    print("The following module could not be found:", e)
+    quit()
 
 from tkinter import ttk
 from serial.tools import list_ports
@@ -86,19 +91,30 @@ def restart():
         return
 
 
+def write_to_config():
+    print("Writing to file...")
+    with open("setup.ini", 'w') as ini_file:
+        config['SETUP'] = {
+            'port':conn.port,
+            'bps':conn.bps,
+            'count':dump_val}
+
+        config.write(ini_file)
+
+
 def record(menu):
     """Called from class Main() through 'Record' in Tools. Create a recording session where data is collected
     and allow for 'Record' to be toggled between starting and stoping.\n
     Data is automatically written to CSV on session end."""
 
-    global recording, records, init_time
+    global recording, records
 
     if not recording:
         print("Recording Enabled...")
         menu.entryconfigure(1, label="Stop Recording")
         
         records.clear()
-        init_time = 0
+        conn.init_time = 0
         recording = True
     else:
         print("Recording Disabled...")
@@ -119,7 +135,7 @@ def dump_data():
         print(f"Peak value: {max(records)[0]}")
         average_value = 0
         for i in records:
-            average_value += int(i[0])
+            average_value += float(i[1])
 
         average = round(float(average_value / len(records)), 2)
         print(f"Average value: {average}")
@@ -133,7 +149,7 @@ def dump_data():
             for item in records:
                 writer.writerow({'force': item[0], 'newtons': item[1], 'time': item[2]})
             
-            writer.writerow({'peak': max(records)[0], 'average': average})
+            writer.writerow({'peak': max(records)[1], 'average': average})
             dump_val += 1
     else:
         return
@@ -153,10 +169,13 @@ def open_dump():
 def plot_graph():
     """Called from class Main() through 'Plot Graph' in Tools. Select record to generate a graph from."""
     
-    filename = filedialog.askopenfilename(initialdir="./", title="Open File...", filetypes=[("Text File","*.csv")])
-    if not filename == '':
+    filename = filedialog.askopenfilename(initialdir="./results", title="Open File...", filetypes=[("Text File","*.csv")]).split('/')
+    print(filename[-1])
+    if not '' in filename:
         graph = PlotGraph()
-        graph.plot(filename)
+        graph.plot(filename[-1])
+        graph.show()
+
     else:
         return
 
@@ -167,7 +186,30 @@ class Connect():
 
     def __init__(self, *args, **kwargs):
         '''Setup for the application'''
+        
         super(Connect, self).__init__()
+        global dump_val
+
+        try:
+            cmd_args = list(sys.argv[1]); cmd_args.remove('-')
+        except:
+            pass
+        else:
+            if 'f' in cmd_args or 'flush' in cmd_args:
+                print("Removing all files in 'results'...")
+                folder = f"{os.path.dirname(os.path.realpath(__file__))}/results"
+                for filename in os.listdir(folder):
+                    path_to_file = os.path.join(folder, filename)
+                    os.unlink(path_to_file)
+
+                print("All files have been deleted.", end="") if len(os.listdir(folder)) == 0 else print("Not all files could be removed.", end="")
+            
+            elif 'r' in cmd_args or 'reset' in cmd_args:
+                print("Resetting 'setup.ini'...")
+                dump_val = 0
+
+            return
+
         print("Firing up initialisation...")
         
         self.port = config['SETUP']['port']
@@ -308,12 +350,11 @@ class PortsMenu(tk.Tk):
         port_lbl = ttk.Label(self, text="Ports:")
         port_lbl.pack(side="left", padx=20)
 
-
         if (conn.connection_lost and len(self.port_options) == 1 and conn.port in self.port_options) or (not conn.connection_lost and len(self.port_options) == 1 and conn.port in self.port_options):
             no_ports = ttk.Label(self, text=conn.port)
             no_ports.pack(side="left", padx=10)
         elif len(self.port_options) >= 1:
-            option = ttk.OptionMenu(self, self.selected_port, conn.port, *self.port_options, command=self.OptionMenu_OnChange)
+            option = ttk.OptionMenu(self, self.selected_port, conn.port, *self.port_options, command=self.optionmenu_onchange)
             option.pack(side="left")
         else:
             no_ports = ttk.Label(self, text="No Port Available...")
@@ -331,7 +372,7 @@ class PortsMenu(tk.Tk):
                 self.port_options.append(list(com_port)[0])
    
 
-    def OptionMenu_OnChange(self, event):
+    def optionmenu_onchange(self, event):
         """Local callback - changes the serial port."""
         self.update_ports_list()
 
@@ -339,7 +380,6 @@ class PortsMenu(tk.Tk):
         if not conn.connection_lost:
             print(f"Reconnecting on {conn.port}:{conn.bps}...")
             conn.connect()
-
 
 
 def main():
@@ -381,18 +421,14 @@ def main():
 
 if __name__ == "__main__":
     conn = Connect()
-    conn.app.after(200, main)
-    conn.app.mainloop()
+    try:
+        conn.app.after(200, main)
+        conn.app.mainloop()
+    except:
+        sys.exit()
 
     print(f"Closing connection to {conn.port}:{conn.bps}...")
-    print("Writing to file...")
-    with open("setup.ini", 'w') as ini_file:
-        config['SETUP'] = {
-            'port':conn.port,
-            'bps':conn.bps,
-            'count':dump_val}
-
-        config.write(ini_file)
+    write_to_config()
 
 print("Terminating process...")
 quit()
