@@ -46,7 +46,6 @@ CREDIT: Program created by Ethan Smith-Coss
                                 read from the incoming serial data stream.
 """
 
-import re
 import csv
 import sys, os
 import threading
@@ -111,14 +110,14 @@ def record(menu):
 
     if not recording:
         print("Recording Enabled...")
-        menu.entryconfigure(1, label="Stop Recording")
+        menu.entryconfigure(0, label="Stop Recording")
         
         records.clear()
         conn.init_time = 0
         recording = True
     else:
         print("Recording Disabled...")
-        menu.entryconfigure(1, label="Record")
+        menu.entryconfigure(0, label="Record")
         
         dump_data()
         recording = False
