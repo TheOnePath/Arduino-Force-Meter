@@ -1,0 +1,105 @@
+This module provides a Real-Time serial data stream, read-only, from an Arduino that's connected via COMs port.
+NOTE: This module is in beta stages and redevelopment will be necessary for improved efficiency later on.
+CREDIT: Program created by Ethan Smith-Coss
+
+    The baurate of the Arduino must be set at 9600 and if the COMs port stored does not match the Arduino then
+    this module will reconnect to the correct port and store the new COM port. If the connection to Arduino is
+    lost then the script will try and reconnect to the Arduino on the same port every 10 seconds. If this is
+    unsuccessful then a new port is searched for, becoming the new COMs port and stored, however if the Arduino
+    is found on the same port and baurate then the connection is re-established and the program starts over again.
+
+    Some important classes and methods of this module.
+        class Connect           	flags | flush '-f', reset '-r':
+            This is the main class of the whole application and should be the primary reference point when
+            calling the module externally. This class does not take any parameters and initialises some
+            important global variables as followed:
+                self.port           the main COMs port that is used to create a serial link to the Arduino.
+                self.bps            the baurate of the Arduino that's used in conjunction with self.port.
+                self.ports_list     a list of the currently available COMs ports
+                self.app            an object variable of the class Main. To access variables and methods
+                                    within Main, this variable should be referenced.
+                
+        function connect()      	parameters | self               belongs to | Connect:
+            This function is responsible for initialising the serial connection to the Arduino on the defined
+            ports in class Connect. If the connection is not established then the program will search for another
+            available port and reconnect on that port or re-establish the same connection - both occur after 10 seconds.
+
+            If the connection to the Arduino is lost whilst reading the serial data stream, then this function is too
+            responsible for reconnecting the serial data stream.
+            Some notable global variables within this function accessed through class Connect():
+                self.arduino            this is the main variable that holds a link to the arduino
+                                        and is reads the serial data stream forever. If the connection
+                                        to the Arduino is lost this variable loses its link and raises
+                                        the exception serial.SerialException() in function main()
+                self.connection_lost    responsible for determining when the connection to the Arduino
+                                        is lost and re-established during conditional verification.
+
+        function flags()        	parameters | self, flag_list    belongs to | Connect:
+            This function interprets flags passed to class Connect through the CLI on program execute.
+            The valid flags are as followed:
+                flags:
+                    flush '-f'          delete all CSV files generated from events. Files are unlinked
+                                        and are not retrievable. NOTE: files stored in 'results' are not
+                                        filtered to CSV only, beware of additional files stored in this
+                                        directory as they too are deleted!
+                    reset '-r'          reset variables in the setup.ini file. Notable defaults are
+                                        'count' under 'SETUP' to reset the default naming convention for
+                                        CSV files of recorded events.
+        
+
+        class Main      		parameter | tk.Tk:
+            This is the main class that creates the tkinter framework window for the real-time serial data stream.
+            Here, 3 variable labels are created, Force, Newtons and Time, each of which changes in-response to the
+            incoming data stream. Some important variables are as followed:
+                self.force      the variable label that changes depending on the level of force read from the incoming
+                                serial data stream.
+                self.newton     the variable label that changes depending on the calculated newton force read from the
+                                incoming serial data stream.
+                self.time       the variable label that changes according to the internal elapsed time of the Arduino
+                                read from the incoming serial data stream.
+
+
+        class PortsMenu()       	parameters | tk.Tk
+            This class is a second window using the Tkinter framework to allow the change of the selected COM port and
+            is responsible for allowing the user to set the port if the default stored in setup.ini, 'port' under 'SETUP'
+            if the port is different. All variables are local to this class.
+
+        function update_ports_list()    parameters | self       	belongs to | PortsMenu
+            This functions get a list of all the avaiblable COM ports that is found by the system. If this list is empty
+            then the user is notified, a device should then be plugged into the system via USB and the window closed and
+            reopened. If one or multiple COM ports are found then they are added to a list for Tkinter OptionMenu widget,
+            a selectable drop down list menu.
+            Function is called by optionmenu_onchange()
+
+        function optionmenu_onchange	parameters  | self, event       belongs to | PortsMenu
+            This function is responsible for listening and responding to when the user selects a item from the Tkinter
+            OptionMenu. Then global variable conn.port is updated to the newly selected COM port and if the connection
+            is not lost, determined via global variable conn.connection_lost, the global function conn.connect is called
+            to re-establish a new connect under the newly redefined variables.
+            If a connection is unsuccessful, this process should occur again and user should selected a different COM port.
+
+
+        function main()     		belongs to | module         	NOTE | Not to be confused with the class Main
+            This function is responsible for reading the incoming byte serial data stream and decoding using UTF-8. Once
+            the read line is decoded, the data is then split according to all non-alphabetical characters, leaving only
+            integers and floats. If the incoming data is different to that stored temporarily in the log, the newly incoming
+            data that was split is assigned to the variable labels found in class Main, showing a real-time display of the
+            incoming data, however if the incoming data is not different then the data is ingnored to increase system performance.
+            Some notable features of this function:
+                msglog                  a variable to temporarily hold the last read data from the
+                                        serial data stream. Log is updated before the next line is
+                                        read from the serial data stream.
+                ard_msg                 reads the next incoming line of byte data from the serial
+                                        serial data stream and decodes the data with UTF-8 encoding
+                msg                     a string list of all digital values read from the decoded 
+                                        serial data stream. The data is split according to if the
+                                        characters are not alphabetical characters meaning only
+                                        integer and floats are read; the data is split into 3 different
+                                        items corresponding to force, newtons and time.
+
+                After 5ms the function is called again via the Tkinter after() method.
+                This function occurs in parallel with class Main, which initiates this
+                function.
+                
+                Caught exceptions that are ignored: UnicodeDecodeError, UnboundLocalError
+                Caught exceptions that are handled: AttributeError, Serial.SerialException
