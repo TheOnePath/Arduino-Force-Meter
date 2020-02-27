@@ -9,7 +9,7 @@ CREDIT: Program created by Ethan Smith-Coss
     is found on the same port and baurate then the connection is re-established and the program starts over again.
 
     Some important classes and methods of this module.
-        class Connect:
+        class Connect           flags | flush '-f', reset '-r':
             This is the main class of the whole application and should be the primary reference point when
             calling the module externally. This class does not take any parameters and initialises some
             important global variables as followed:
@@ -19,7 +19,7 @@ CREDIT: Program created by Ethan Smith-Coss
                 self.app            an object variable of the class Main. To access variables and methods
                                     within Main, this variable should be referenced.
                 
-        function connect()      parameters | self       belongs to | Connect:
+        function connect()      parameters | self               belongs to | Connect:
             This function is responsible for initialising the serial connection to the Arduino on the defined
             ports in class Connect. If the connection is not established then the program will search for another
             available port and reconnect on that port or re-establish the same connection - both occur after 10 seconds.
@@ -33,7 +33,20 @@ CREDIT: Program created by Ethan Smith-Coss
                                         the exception serial.SerialException() in function main()
                 self.connection_lost    responsible for determining when the connection to the Arduino
                                         is lost and re-established during conditional verification.
+
+        function flags()        parameters | self, flag_list    belongs to | Connect:
+            This function interprets flags passed to class Connect through the CLI on program execute.
+            The valid flags are as followed:
+                flags:
+                    flush '-f'          delete all CSV files generated from events. Files are unlinked
+                                        and are not retrievable. NOTE: files stored in 'results' are not
+                                        filtered to CSV only, beware of additional files stored in this
+                                        directory as they too are deleted!
+                    reset '-r'          reset variables in the setup.ini file. Notable defaults are
+                                        'count' under 'SETUP' to reset the default naming convention for
+                                        CSV files of recorded events.
         
+
         class Main      parameter | tk.Tk:
             This is the main class that creates the tkinter framework window for the real-time serial data stream.
             Here, 3 variable labels are created, Force, Newtons and Time, each of which changes in-response to the
@@ -44,6 +57,53 @@ CREDIT: Program created by Ethan Smith-Coss
                                 incoming serial data stream.
                 self.time       the variable label that changes according to the internal elapsed time of the Arduino
                                 read from the incoming serial data stream.
+
+
+        class PortsMenu()       parameters | tk.Tk
+            This class is a second window using the Tkinter framework to allow the change of the selected COM port and
+            is responsible for allowing the user to set the port if the default stored in setup.ini, 'port' under 'SETUP'
+            if the port is different. All variables are local to this class.
+
+        function update_ports_list()    parameters | self       belongs to | PortsMenu
+            This functions get a list of all the avaiblable COM ports that is found by the system. If this list is empty
+            then the user is notified, a device should then be plugged into the system via USB and the window closed and
+            reopened. If one or multiple COM ports are found then they are added to a list for Tkinter OptionMenu widget,
+            a selectable drop down list menu.
+            Function is called by optionmenu_onchange()
+
+        function optionmenu_onchange        parameters  | self, event       belongs to | PortsMenu
+            This function is responsible for listening and responding to when the user selects a item from the Tkinter
+            OptionMenu. Then global variable conn.port is updated to the newly selected COM port and if the connection
+            is not lost, determined via global variable conn.connection_lost, the global function conn.connect is called
+            to re-establish a new connect under the newly redefined variables.
+            If a connection is unsuccessful, this process should occur again and user should selected a different COM port.
+
+
+        function main()     belongs to | module         NOTE | Not to be confused with the class Main
+            This function is responsible for reading the incoming byte serial data stream and decoding using UTF-8. Once
+            the read line is decoded, the data is then split according to all non-alphabetical characters, leaving only
+            integers and floats. If the incoming data is different to that stored temporarily in the log, the newly incoming
+            data that was split is assigned to the variable labels found in class Main, showing a real-time display of the
+            incoming data, however if the incoming data is not different then the data is ingnored to increase system performance.
+            Some notable features of this function:
+                msglog                  a variable to temporarily hold the last read data from the
+                                        serial data stream. Log is updated before the next line is
+                                        read from the serial data stream.
+                ard_msg                 reads the next incoming line of byte data from the serial
+                                        serial data stream and decodes the data with UTF-8 encoding
+                msg                     a string list of all digital values read from the decoded 
+                                        serial data stream. The data is split according to if the
+                                        characters are not alphabetical characters meaning only
+                                        integer and floats are read; the data is split into 3 different
+                                        items corresponding to force, newtons and time.
+
+                After 5ms the function is called again via the Tkinter after() method.
+                This function occurs in parallel with class Main, which initiates this
+                function.
+                
+                Caught exceptions that are ignored: UnicodeDecodeError, UnboundLocalError
+                Caught exceptions that are handled: AttributeError, Serial.SerialException
+
 """
 
 import csv
@@ -90,12 +150,12 @@ def restart():
         return
 
 
-def write_to_config():
+def write_to_config(p, bps):
     print("Writing to file...")
     with open("setup.ini", 'w') as ini_file:
         config['SETUP'] = {
-            'port':conn.port,
-            'bps':conn.bps,
+            'port':p,
+            'bps':bps,
             'count':dump_val}
 
         config.write(ini_file)
@@ -110,14 +170,16 @@ def record(menu):
 
     if not recording:
         print("Recording Enabled...")
-        menu.entryconfigure(0, label="Stop Recording")
+        for m in menu:
+            m.entryconfigure(0, label="Stop Recording")
         
         records.clear()
         conn.init_time = 0
         recording = True
     else:
         print("Recording Disabled...")
-        menu.entryconfigure(0, label="Record")
+        for m in menu:
+            m.entryconfigure(0, label="Record")
         
         dump_data()
         recording = False
@@ -130,14 +192,22 @@ def dump_data():
     global dump_val
     
     if len(records) > 0:
-        print(f"Gathered recordings: {records}")
-        print(f"Peak value: {max(records)[0]}")
+        try: 
+            if 'v' in conn.cmd_args or 'verbose' in conn.cmd_args:
+                print(f"Gathered recordings: {records}")
+                print(f"Peak value: {max(records)[0]}")
+        except: pass
+
         average_value = 0
         for i in records:
             average_value += float(i[1])
 
         average = round(float(average_value / len(records)), 2)
-        print(f"Average value: {average}")
+        
+        try: 
+            if 'v' in conn.cmd_args or 'verbose' in conn.cmd_args:
+                print(f"Average value: {average}")
+        except: pass
 
         print(f"\nDumping recordings into data_{dump_val}.csv")
         with open(f"results/data_{dump_val}.csv", 'w', newline='') as csvfile:
@@ -169,7 +239,6 @@ def plot_graph():
     """Called from class Main() through 'Plot Graph' in Tools. Select record to generate a graph from."""
     
     filename = filedialog.askopenfilename(initialdir="./results", title="Open File...", filetypes=[("Text File","*.csv")]).split('/')
-    print(filename[-1])
     if not '' in filename:
         graph = PlotGraph()
         graph.plot(filename[-1])
@@ -189,30 +258,21 @@ class Connect():
         super(Connect, self).__init__()
         global dump_val
 
+        self.port = config['SETUP']['port']
+        self.bps = int(config['SETUP']['bps'])
+        self.cmd_args = None
+
         try:
-            cmd_args = list(sys.argv[1]); cmd_args.remove('-')
+            get_args = list(sys.argv[1]); get_args.remove('-') if '-' in get_args else None
         except:
             pass
         else:
-            if 'f' in cmd_args or 'flush' in cmd_args:
-                print("Removing all files in 'results'...")
-                folder = f"{os.path.dirname(os.path.realpath(__file__))}/results"
-                for filename in os.listdir(folder):
-                    path_to_file = os.path.join(folder, filename)
-                    os.unlink(path_to_file)
-
-                print("All files have been deleted.", end="") if len(os.listdir(folder)) == 0 else print("Not all files could be removed.", end="")
-            
-            elif 'r' in cmd_args or 'reset' in cmd_args:
-                print("Resetting 'setup.ini'...")
-                dump_val = 0
+            self.cmd_args = get_args
+            self.flags(get_args)
 
             return
 
         print("Firing up initialisation...")
-        
-        self.port = config['SETUP']['port']
-        self.bps = int(config['SETUP']['bps'])
 
         self.connection_lost = False
         self.ports_list = []
@@ -238,6 +298,28 @@ class Connect():
             if not list(com_port) in self.ports_list:
                 self.ports_list.append(list(com_port)[0])
 
+    
+    def flags(self, flag_list):
+        global dump_val
+
+        for flag in flag_list:
+            if flag == 'f' or flag == 'flush':
+                print("Removing all files in 'results'...")
+                folder = f"{os.path.dirname(os.path.realpath(__file__))}/results"
+                for filename in os.listdir(folder):
+                    path_to_file = os.path.join(folder, filename)
+                    os.unlink(path_to_file)
+
+                print("All files have been deleted.") if len(os.listdir(folder)) == 0 else print("Not all files could be removed.")
+                
+            elif flag == 'r' or flag == 'reset':
+                print("Resetting 'setup.ini'...")
+                dump_val = 0
+                write_to_config(self.port, self.bps)
+            
+            else:
+                print(flag + ", is an invalid flag.")
+
 
 class Main(tk.Tk):
     """Main class to initialise the tkinter window called after Connect().\n
@@ -259,7 +341,7 @@ class Main(tk.Tk):
         # Enable right-click in Menu
         menu_win = tk.Menu(menubar, tearoff=0)
         # Quick select for recording
-        menu_win.add_command(label="Record", command=lambda: record(menu_win))
+        menu_win.add_command(label="Record", command=lambda: record([menu_win, toolmenu]))
 
         filemenu = tk.Menu(menubar, tearoff=0)
         filemenu.add_command(label="Save", command=dump_data)
@@ -273,7 +355,7 @@ class Main(tk.Tk):
         optionmenu.add_command(label="Close Connection", command=self.quit)
 
         toolmenu = tk.Menu(menubar, tearoff=0)
-        toolmenu.add_command(label="Record", command=lambda: record(toolmenu))
+        toolmenu.add_command(label="Record", command=lambda: record([toolmenu, menu_win]))
         toolmenu.add_command(label="Plot Graph", command=plot_graph)
 
         menubar.add_cascade(label="File", menu=filemenu)
@@ -288,7 +370,7 @@ class Main(tk.Tk):
         # Populate window
         lbl1 = tk.Label(self, text="Force:")
         lbl2 = tk.Label(self, text="Newton:")
-        lbl3 = tk.Label(self, text="Average Force:")
+        lbl3 = tk.Label(self, text="Time:")
         force_lbl = tk.Label(self, textvariable=self.force)
         netwon_lbl = tk.Label(self, textvariable=self.newton)
         time_lbl = tk.Label(self, textvariable=self.time)
@@ -315,18 +397,6 @@ class PortsMenu(tk.Tk):
         """Setup initialisation."""
 
         super().__init__()
-        ## NOTE:
-        # incremental factor equals 6. When width isn't passed, 
-        # the number of pixels equals 44px
-        # ...
-        # formaula - 'width = n' = (wm_width - px[width = 1]) / k, when k = 6
-        #            (key px[...] means no. of pixels of width = 1)
-        ## FUTHER NOTE:
-        # Since the value of n cannot be a decimal value, rounding to the nearest
-        # whole number will be an offset to the actually size.
-        ## EXAMPLE:
-        # button = ttk.Button(self, text="Hello World", width=round((int(wm_width)/2 - 16) / 6), command=self.callback)
-        ##
 
         wm_width = '250'
         wm_height = '50'
@@ -404,7 +474,6 @@ def main():
             if recording:
                 if conn.init_time == 0:
                     conn.init_time = int(msg[2])
-                    print(conn.init_time)
                 else:
                     records.append([float(msg[0]), float(msg[1]), int(msg[2]) - conn.init_time])
 
@@ -427,7 +496,7 @@ if __name__ == "__main__":
         sys.exit()
 
     print(f"Closing connection to {conn.port}:{conn.bps}...")
-    write_to_config()
+    write_to_config(conn.port, conn.bps)
 
 print("Terminating process...")
 quit()
